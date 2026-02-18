@@ -381,7 +381,7 @@ To contribute to this project:
 
 1. Install development dependencies:
    ```sh
-   pip install -e ".[dev]"
+   pip install -r requirements.txt
    ```
 
 2. Run tests:
