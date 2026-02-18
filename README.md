@@ -1,22 +1,49 @@
-# Class refrences 
+# actress
 
-## Future 
-Provides Promise-like interface for tasks, enabling them to be awaited from async contexts.
+An implementation of [actor](https://github.com/Gozala/actor) in Python.
 
-## Scheduler Infrastructure
+## Install
 
-### Stack
+```sh
+pip install actress
+```
+
+## Usage
+
+```py
+import actress
+```
+## Design
+
+Library uses cooperative scheduler to run concurrent **tasks** (a.k.a light-weight processes) represented via **synchronous** generators. Tasks describe asynchronous operations that may fail, using (synchronous looking) delimited continuations. That is, instead of `await` on a result of async operation, you delegate via `yield from`, which allows scheduler to suspend execution until (async) result is ready and resume task with a value or a thrown exception.
+
+## API Reference
+
+### `Task<T, X, M>`
+
+Task represents a unit of computation that runs concurrently, a light-weight process (in Erlang terms). You can spawn bunch of them and provided cooperative scheduler will interleave their execution.
+
+Tasks have three type variables:
+
+- Variable `T` describes return type of successful computation.
+- Variable `X` describes error type of failed computation (type of thrown exceptions)
+- Variable `M` describes type of messages this task may produce.
+
+### Scheduler Infrastructure
+
+#### Stack
 Manages the execution queue of tasks within a group, separating active tasks (ready to run) from idle tasks (suspended).
 - Tasks in active are processed in FIFO order by the scheduler
 - Tasks move to idle when they yield SUSPEND
 - Tasks move from idle to active when enqueue() is called
 - The scheduler's step() function processes the active queue until empty
 
-### TaskGroup
+#### TaskGroup
 Groups related tasks together under a driver task while ``` MAIN() ``` is the singleton root group for all top-level tasks. Unlike TaskGroup, it has no driver or parent.
 
-# Task Control Functions
-## abort
+### Task Control Functions
+
+#### abort
 
 ```python
 def abort(handle: ControllerFork[T, X, M], error: Exception) -> Task
@@ -30,7 +57,7 @@ The task may still remain active temporarily because:
 - it has a finally block
 - cleanup logic yielded control during termination
 
-## all
+#### all
 
 ```python
 def all_(tasks: Iterable[Task[M, T]]) -> Task[Any, list[T]]
@@ -38,7 +65,7 @@ def all_(tasks: Iterable[Task[M, T]]) -> Task[Any, list[T]]
 
 Runs multiple tasks concurrently and returns their results in order. Equivalent to Promise.all but that does not have cancellation.
 
-## batch
+#### batch
 
 ```python
 def batch(effects: list[Effect[T]]) -> Effect[T]
@@ -46,7 +73,7 @@ def batch(effects: list[Effect[T]]) -> Effect[T]
 
 Takes several effects and combines them into one effect.
 
-## effects
+#### effects
 
 ```python
 def effect(task: Task[None, T]) -> Effect[T]
@@ -54,7 +81,7 @@ def effect(task: Task[None, T]) -> Effect[T]
 
 Converts a task (that never fails or sends messages) into an effect that produces its result as a message. Useful for converting task results into the message stream.
 
-## enqueue
+#### enqueue
 
 ```python
 def enqueue(task: ControllerFork[T, X, M]) -> None:
@@ -62,7 +89,7 @@ def enqueue(task: ControllerFork[T, X, M]) -> None:
 
 Every task belongs to exactly one task group, then it marks the task as runnable and removed from idle if the task was previously blocked, then the code inspect parent group scheduler queues and locate the driver (a child group may have a driver but MAIN will have no driver as it will be root of the tree and then we unblock the driver if it is idle and stop if already unblocked and move upwards in the tree and scheduler loop executes tasks until no idle tasks remain, if some task crashes crashing task is removed and unrelated tasks take place.
 
-## exit
+#### exit
 
 ```python
 def exit_(handle: ControllerFork[T, X, M], value: Any) -> Task[None, None]
@@ -71,7 +98,7 @@ def exit_(handle: ControllerFork[T, X, M], value: Any) -> Task[None, None]
 Concludes the task with a Success result. Executes any finally blocks in the task (calls conclude with return value). Task handlers are called with the success value.
 Use ``` terminate ``` for like void return 
 
-## fork
+#### fork
 
 ```python
 def fork(task: Task[M, T], options: ForkOptions | None = None) -> Fork[T, X, M]
@@ -84,7 +111,7 @@ Creates a Fork wrapper around the task but does not start execution immediately 
 - Deferred joining: `fk = fork(work()); ...; result = yield from fk.join()`
 - Async integration: `result = await fork(work())`
 
-## group
+#### group
 
 ```python
 def group(forks: list[Fork[T, X, M]]) -> Task[Optional[Instruction[M]], None]
@@ -100,19 +127,7 @@ It groups multiple forked tasks together and joins them with the current task so
   - The driver suspends itself
   - It will be resumed automatically when a child task wakes up (because enqueue() unblocks the driver)
 
-**Abort handling:**
-```python
-# Abort all idle tasks and re-enqueue them
-for task in group.stack.idle:
-    yield from abort(task, error)
-    enqueue(task)
-```
-
-Idle tasks may still have cleanup code (finally blocks), so:
-- They are aborted
-- Then re-enqueued so the abort fully completes
-
-## join
+#### join
 
 ```python
 def join(fork: Fork[T, X, M]) -> Task[Optional[Instruction[M]], T]
@@ -123,17 +138,17 @@ def join(fork: Fork[T, X, M]) -> Task[Optional[Instruction[M]], T]
 - Returns the fork's success value
 - Throws the fork's error if it failed
 
-## listen 
+#### listen 
 
-``` python
+```python
 def listen(sources: dict[Tag, Effect[M]]) -> Effect[Union[Control, Tagged[M]]]
 ```
 
 - Each effect has its key
 - All non empty effectes are forked and grouped together
 
-### Example 
-``` python
+**Example:**
+```python
 def reads():
     yield "read1"
     yield "read2"
@@ -147,64 +162,80 @@ tagged = listen({"read": reads(), "write": writes()})
 #         {"type": "read", "read": "read2"}
 ```
 
-## loop 
-``` python
+#### loop 
+
+```python
 def loop(init: Effect[M], next_: Callable[[M], Effect[M]]) -> Task[None, None]
 ```
+
 Creates a feedback loop here each message will produce a new effect 
 - Enqueues the initial effect
 - For each message from step(), enqueues next_(message)
 - Suspends when all effects are idle
 - Completes when there are no more active or idle tasks
 
-## move 
-``` python
+#### move 
+
+```python
 def move(fork: Fork[T, X, M], group: TaskGroup[T, X, M]) -> None
 ```
+
 Move a fork from its current do a different group .Moving the top task in the active queue is done with attention .
 The ``` step() ``` checks for group changes ( to prevent race conditions ) 
 
-## resume 
-``` python
+#### resume 
+
+```python
 def resume(task: Controller[M, T] | Fork[T, X, M]) -> None
 ```
+
 Resumes a suspended task by enqueuing it for execution.
 - Calls ``` enqueue() ``` to add the task again to the active queue ( unblocks the driver if blocked)
 - execution is resumed in the next scheduler tick
 
-## send 
-``` python
+#### send 
+
+```python
 def send(message: M) -> Effect[M]
 ```
+
 Creates an effect that sends a single message.
 
-## sleep
-``` python
+#### sleep
+
+```python
 def sleep(duration: float = 0) -> Task[Control, None]
 ```
+
 Suspends execution for a specified duration in milliseconds, then resumes.
 if the task is aborted uses finally block cancels the timer 
 
-## spawn 
-``` python 
+#### spawn 
+
+```python 
 def spawn(task: Task[None, None]) -> None
 ```
+
 Executes a detached task that cannot be joined 
 
-## suspend 
-``` python
+#### suspend 
+
+```python
 def suspend() -> Generator[SuspendInstruction, Any, None]
 ```
+
 Suspends the current task until it is resumed by calling resume() with its handle. finally block is there if the task is aborted 
 
-## tag 
-``` python
+#### tag 
+
+```python
 def tag(effect: Union[Fork[T, X, M], Tagger[T, X, M]], tag: str) -> Effect[Union[Control, Tagged[M]]]
 ```
+
 Tags an effect by boxing each message with a type identifier.
 
-### Example 
-``` python
+**Example:**
+```python
 def numbers():
     yield 1
     yield 2
@@ -214,34 +245,39 @@ tagged = tag(fork(numbers()), "num")
 #         {"type": "num", "num": 2}
 ```
 
-## then_
-``` python
+#### then_
+
+```python
 def then_(
     task: Task[M, T],
     resolve: Callable[[T], U],
     reject: Callable[[X], U]
 ) -> Task[M, U]
 ```
+
 Executes the task and if successful, calls resolve() or reject() basically promise like then interface for tasks 
 
-## wait 
-``` python
+#### wait 
+
+```python
 def wait(input: Union[Awaitable[T], T]) -> Task[Control, T]
 ```
 
 Provides equivalent of `await` in async functions. Specifically it takes a value that you can `await` on (that is `[T]`, i.e futures, coroutines) and suspends execution until future is settled. If future succeeds execution is resumed with `T` otherwise an error of type `X` is thrown (which is by default `unknown` since futures do not encode error type). It is useful when you need to deal with potentially async set of operations without having to check if thing is an `await`-able at every step.
-### Please note that execution is suspended even if given value is not a promise, however scheduler will still resume it in the same tick of the event loop after, just processing other scheduled tasks. This avoids problematic race condititions that can otherwise occur when values are sometimes promises and other times are not.
 
-Example:
-``` python 
+**Please note** that execution is suspended even if given value is not a promise, however scheduler will still resume it in the same tick of the event loop after, just processing other scheduled tasks. This avoids problematic race condititions that can otherwise occur when values are sometimes promises and other times are not.
+
+**Example:**
+```python 
 def fetch_json(url, options):
-const response = yield from wait(fetch(url, options))
-const json = yield from wait(response.json())
-return json
+    response = yield from wait(fetch(url, options))
+    json = yield from wait(response.json())
+    return json
 ```
-# Examples 
 
-## Hello World Task
+## Examples 
+
+### Hello World Task
 
 ```python
 from actress.task import main
@@ -254,7 +290,7 @@ def hello_world():
 main(hello_world())
 ```
 
-## Producing Messages with `send()`
+### Producing Messages with `send()`
 
 ```python
 from actress.task import main, send
@@ -268,9 +304,7 @@ def counter():
 main(counter())
 ```
 
----
-
-## Concurrent Tasks with `fork()` and `join()`
+### Concurrent Tasks with `fork()` and `join()`
 
 ```python
 from actress.task import main, fork, join, sleep
@@ -294,7 +328,7 @@ def coordinator():
 main(coordinator())
 ```
 
-## Running `all_()`
+### Running `all_()`
 
 ```python
 from actress.task import main, all_, sleep
@@ -318,6 +352,22 @@ def run_all():
 main(run_all())
 ```
 
+## Contributing
 
+All welcome! storacha.network is open-source.
 
+To contribute to this project:
 
+1. Install development dependencies:
+   ```sh
+   pip install -e ".[dev]"
+   ```
+
+2. Run tests:
+   ```sh
+   pytest
+   ```
+
+## License
+
+Dual-licensed under [Apache-2.0 OR MIT](LICENSE.md)
