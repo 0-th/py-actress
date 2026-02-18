@@ -257,6 +257,27 @@ def then_(
 
 Executes the task and if successful, calls resolve() or reject() basically promise like then interface for tasks 
 
+`U` is used specifically in the `then_()` function to represent the **transformed return type** after applying success or failure handlers.
+
+```python
+def get_number() -> Task[None, int]:
+    return 42
+    yield
+
+# Transform int to string (U = str)
+def process():
+    result = yield from then_(
+        get_number(),
+        resolve=lambda n: f"Success: {n}",  # int -> str
+        reject=lambda e: f"Error: {e}"      # Exception -> str
+    )
+    print(result) 
+    yield
+
+# Run the task
+main(process())
+```
+
 #### wait 
 
 ```python
