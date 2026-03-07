@@ -4,9 +4,9 @@ build-backend = "hatchling.build"
 
 [project]
 name = "actress"
-version = "0.0.1"
+version = "0.1"
 authors = [{ name = "Alan Shaw", email = "alan@storacha.network" }]
-description = "An implementation of actor in Python."
+description = "An implementation of actor model of concurrency in Python."
 readme = "README.md"
 requires-python = ">=3.10"
 classifiers = [
